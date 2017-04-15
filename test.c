@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <stdbool.h>
+#include <math.h>
 
 #define ROOT_START 9728
 #define ATT_OFFSET 11
@@ -14,7 +15,7 @@
 #define FILE_TYPE 0x20
 #define FILE_ENTRY_SIZE 31
 #define FAT_START 512
-
+#define CLUSTER_SIZE 512
 
 void retrieveFile(){
 
@@ -33,7 +34,7 @@ int main(){
     }
 
     //Map the file into memory
-    char *filemappedpage = mmap(NULL, sb.st_size,
+    unsigned char *filemappedpage = mmap(NULL, sb.st_size,
                                 PROT_READ | PROT_WRITE,
                                 MAP_SHARED, fd, 0);
 
@@ -54,9 +55,9 @@ int main(){
         byteNum++;
       }
       filesize_Hex[8] = '\0';
-
-
       long int filesize = strtol(filesize_Hex, NULL, 16);
+
+
 
       //Get the first cluster of the file
       char clusterNum_Hex[5];
@@ -67,31 +68,62 @@ int main(){
         byteNum++;
       }
       filesize_Hex[4] = '\0';
-
-
       long int firstCluster = strtol(filesize_Hex, NULL, 16);
 
-      //Get the cluster information from the FAT
-      bool even = true;
-      if(firstCluster%2 != 0){
-        firstCluster = firstCluster - 1;
-        even = false;
+      //find out how many clusters we need and make array of that size
+      long int totalCluster = ceil(filesize / CLUSTER_SIZE);
+      long int clusterList[totalCluster];
+
+      //Set the first cluster in the list
+      clusterList[0] = firstCluster;
+      long int nextCluster = firstCluster;
+
+      //Fill in the rest of the list
+      int i;
+      for(i = 1; i < totalCluster; i++){
+
+        /*Go through the FAT */
+        bool even = true;
+        if(nextCluster%2 != 0){
+          nextCluster = nextCluster - 1;
+          even = false;
+        }
+
+        nextCluster = nextCluster / 2;
+        nextCluster = nextCluster * 3;
+
+        char nextCluster_Hex[5];
+        int currentByte;
+        if(even){
+          currentByte = (int)filemappedpage[FAT_START + nextCluster + 1];
+          currentByte <<= 4;
+          currentByte >>= 4;
+          sprintf(nextCluster_Hex, "%02x", currentByte);
+
+          currentByte = (int)filemappedpage[FAT_START + nextCluster];
+          sprintf(nextCluster_Hex+ 2, "%02x", currentByte);
+          nextCluster = strtol(nextCluster_Hex, NULL, 16);
+        } else{
+
+          currentByte = (int)filemappedpage[FAT_START + nextCluster + 2];
+          sprintf(nextCluster_Hex, "%02x", currentByte);
+
+          currentByte = (int)filemappedpage[FAT_START + nextCluster + 1];
+          currentByte >>= 4;
+          currentByte <<= 4;
+
+          sprintf(nextCluster_Hex+2, "%02x", currentByte);
+          nextCluster = strtol(nextCluster_Hex, NULL, 16);
+          nextCluster >>= 4;
+        }
+
+
+
+        clusterList[i] = nextCluster;
       }
 
-      firstCluster = firstCluster / 2;
-      firstCluster = firstCluster * 3;
 
-    //  if(even){
-        printf("%x\n",filemappedpage[511]);
-      //}
-
-
-
-
-
-
-      retrieveFile();
-    }
+  }
 
 
 
