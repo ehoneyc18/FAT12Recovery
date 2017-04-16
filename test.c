@@ -13,23 +13,42 @@
 #define ATT_OFFSET 11
 #define FIRST_CLUSTER_OFFSET 27
 #define FILE_TYPE 0x20
-#define FILE_ENTRY_SIZE 31
+#define DIR_TYPE 0x10
+#define FILE_ENTRY_OFFSET 31
+#define DIR_ENTRY_SIZE 32
 #define FAT_START 512
 #define CLUSTER_SIZE 512
+#define NUM_ROOT_ENTRIES 224
+#define FILE_NAME_SIZE 8
+#define EMPTY_CHAR 32
 
 
 unsigned char *filemappedpage;
 
-void retrieveClusters(int currentEntry, long int* clusterNum, long int** clusters, long int* size){
-      /* ---- Get the int value for the file size----- */
+void retrieveClusters(int currentEntry, long int* clusterNum, long int** clusters, long int* size, char** name){
 
+      /* ----- Get the file name --- */
+  char* filename = (char*) malloc(sizeof(char) * FILE_NAME_SIZE + 1);
+  int charnum;
+  for(charnum = 0; charnum < FILE_NAME_SIZE; charnum++){
+    int currentByte = (int)filemappedpage[currentEntry + charnum];
+    if (currentByte == EMPTY_CHAR){
+      filename[charnum] = '\0';
+      break;
+    }
+    sprintf(filename+charnum, "%c", currentByte);
+  }
+  *name = filename;
+
+
+      /* ---- Get the int value for the file size----- */
   char filesize_Hex[9];
   int nibbleNum;
   int byteNum = 0;
 
   //Get the bytes in reverse due to little endian ordering and put them in an array
   for(nibbleNum = 0; nibbleNum < 8; nibbleNum = nibbleNum + 2){
-    int currentByte = (int)filemappedpage[currentEntry + FILE_ENTRY_SIZE - byteNum];
+    int currentByte = (int)filemappedpage[currentEntry + FILE_ENTRY_OFFSET - byteNum];
     sprintf(filesize_Hex+nibbleNum, "%02x", currentByte);
     byteNum++;
   }
@@ -43,7 +62,6 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
 
 
        /*----- Get the first cluster of the file ----- */
-
   //Get the bytes in reverse order from the cluster offset and put them in array
   char clusterNum_Hex[5];
   byteNum = 0;
@@ -110,13 +128,18 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
 
 }
 
-void writeFile(long int* clusterList, long int totalClusters, long int filesize){
+void writeFile(long int* clusterList, long int totalClusters, long int filesize, char* filename){
    int i;
    long int* clusters = clusterList;
+   int extensionSize = 4;
+
+   char *fullname = malloc(strlen(filename) + extensionSize + 1); //+1 for the zero-terminator
+   strcpy(fullname, filename);
+   strcat(fullname, ".txt");
 
    //Open a file to write to
    FILE *fptr;
-   fptr = fopen("programtest.txt", "w");
+   fptr = fopen(fullname, "w");
    if(fptr == NULL)
    {
       printf("Error!");
@@ -138,6 +161,25 @@ void writeFile(long int* clusterList, long int totalClusters, long int filesize)
 }
 
 
+void goThroughDir(int root, int rootsize){
+  int currentEntry = root;
+
+  //Check the attribute byte to see if it is a file or a directory
+  int i;
+  for(i = 0; i < rootsize; i++){
+    if(filemappedpage[currentEntry + ATT_OFFSET] == FILE_TYPE){ // If it is a file
+      long int* clusterList;
+      long int totalClusters;
+      long int filesize;
+      char* filename;
+      retrieveClusters(currentEntry, &totalClusters, &clusterList, &filesize, &filename);
+      writeFile(clusterList, totalClusters, filesize, filename);
+    } else if (filemappedpage[currentEntry + ATT_OFFSET] == DIR_TYPE){
+                                                                                  /* <----------------------- need to call goThroughDir to start going through sub directory*/
+    }
+    currentEntry = currentEntry + DIR_ENTRY_SIZE;
+  }
+}
 
 int main(){
 
@@ -155,29 +197,9 @@ int main(){
                                 PROT_READ | PROT_WRITE,
                                 MAP_SHARED, fd, 0);
 
-    //Start at the first entry of the root directory
-    int currentEntry = ROOT_START;
-
-
-    //Check the attribute byte to see if it is a file or a directory
-    if(filemappedpage[currentEntry + ATT_OFFSET] == FILE_TYPE){ // If it is a file
-      long int* clusterList;
-      long int totalClusters;
-      long int filesize;
-      retrieveClusters(currentEntry, &totalClusters, &clusterList, &filesize);
-      writeFile(clusterList, totalClusters, filesize);
-    } else{
-
-    }
+    goThroughDir(ROOT_START, NUM_ROOT_ENTRIES);
 
     return 0;
-
-
-
-
-
-
-
 
 
 
