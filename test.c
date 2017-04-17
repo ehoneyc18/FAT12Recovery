@@ -21,11 +21,12 @@
 #define NUM_ROOT_ENTRIES 224
 #define FILE_NAME_SIZE 8
 #define EMPTY_CHAR 32
+#define FILE_EXT_SIZE 3
 
 
 unsigned char *filemappedpage;
 
-void retrieveClusters(int currentEntry, long int* clusterNum, long int** clusters, long int* size, char** name){
+void retrieveClusters(int currentEntry, long int* clusterNum, long int** clusters, long int* size, char** name, char** ext){
 
       /* ----- Get the file name --- */
   char* filename = (char*) malloc(sizeof(char) * FILE_NAME_SIZE + 1);
@@ -33,12 +34,20 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
   for(charnum = 0; charnum < FILE_NAME_SIZE; charnum++){
     int currentByte = (int)filemappedpage[currentEntry + charnum];
     if (currentByte == EMPTY_CHAR){
-      filename[charnum] = '\0';
       break;
     }
     sprintf(filename+charnum, "%c", currentByte);
   }
   *name = filename;
+
+        /*------Get the file extension -----*/
+  char* fileext = (char*) malloc(sizeof(char) * FILE_EXT_SIZE + 1);
+  for(charnum = 0; charnum < FILE_EXT_SIZE; charnum++){
+    int currentByte = (int)filemappedpage[currentEntry + FILE_NAME_SIZE + charnum];
+    sprintf(fileext+charnum, "%c", currentByte);
+  }
+  fileext[charnum] = '\0';
+  *ext = fileext;
 
 
       /* ---- Get the int value for the file size----- */
@@ -128,14 +137,16 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
 
 }
 
-void writeFile(long int* clusterList, long int totalClusters, long int filesize, char* filename){
+void writeFile(long int* clusterList, long int totalClusters, long int filesize, char* filename, char* extension){
    int i;
    long int* clusters = clusterList;
    int extensionSize = 4;
 
+   //Construct the whole name of the file
    char *fullname = malloc(strlen(filename) + extensionSize + 1); //+1 for the zero-terminator
    strcpy(fullname, filename);
-   strcat(fullname, ".txt");
+   strcat(fullname, ".");
+   strcat(fullname, extension);
 
    //Open a file to write to
    FILE *fptr;
@@ -152,7 +163,7 @@ void writeFile(long int* clusterList, long int totalClusters, long int filesize,
       int clusterRoot = (33 + clusters[i] - 2) * 512;
       int j;
       for(j = 0; (j < CLUSTER_SIZE); j++){
-        fprintf(fptr, "%c", filemappedpage[clusterRoot+j]);
+        fwrite(filemappedpage+clusterRoot+j, sizeof(char),1, fptr);
         count++;
         filesize--;
         if(filesize == 0) break;
@@ -172,10 +183,11 @@ void goThroughDir(int root, int rootsize){
       long int totalClusters;
       long int filesize;
       char* filename;
-      retrieveClusters(currentEntry, &totalClusters, &clusterList, &filesize, &filename);
-      writeFile(clusterList, totalClusters, filesize, filename);
+      char* extension;
+      retrieveClusters(currentEntry, &totalClusters, &clusterList, &filesize, &filename, &extension);
+      writeFile(clusterList, totalClusters, filesize, filename, extension);
     } else if (filemappedpage[currentEntry + ATT_OFFSET] == DIR_TYPE){
-                                                                                  /* <----------------------- need to call goThroughDir to start going through sub directory*/
+                                                                        /* <----------------------- need to call goThroughDir to start going through sub directory*/
     }
     currentEntry = currentEntry + DIR_ENTRY_SIZE;
   }
