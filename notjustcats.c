@@ -146,11 +146,68 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
         nextCluster = nextCluster >> 4;
       }
       clusterList[i] = nextCluster;
+<<<<<<< HEAD
     }
 
   //Save the finised cluster list to the parameter passed in
   *clusters = clusterList;
   }
+  else //for deleted files
+  {
+    //Fill in the rest of the list
+    int i = 1;
+    nextCluster++;
+  while(i < totalCluster){
+
+      /* Go through the FAT */
+
+      //Calculate location of the index in the FAT
+      bool even = true;
+      if(nextCluster%2 != 0){
+        nextCluster = nextCluster - 1;
+        even = false;
+      }
+      nextCluster = nextCluster / 2;
+      nextCluster = nextCluster * 3;
+
+      //Read the entry at that index of the FAT
+      char nextCluster_Hex[5];
+      int currentByte;
+      long int nextClusterChecker = 0;
+      if(even){
+        currentByte = (int)filemappedpage[FAT_START + nextCluster + 1];
+        currentByte = currentByte & 0x0F;
+        sprintf(nextCluster_Hex, "%02x", currentByte);
+
+        currentByte = (int)filemappedpage[FAT_START + nextCluster];
+        sprintf(nextCluster_Hex+ 2, "%02x", currentByte);
+        nextClusterChecker = strtol(nextCluster_Hex, NULL, 16);
+      } else{
+
+        currentByte = (int)filemappedpage[FAT_START + nextCluster + 2];
+        sprintf(nextCluster_Hex, "%02x", currentByte);
+
+        currentByte = (int)filemappedpage[FAT_START + nextCluster + 1];
+        sprintf(nextCluster_Hex+2, "%02x", currentByte);
+        nextClusterChecker = strtol(nextCluster_Hex, NULL, 16);
+        nextClusterChecker = nextClusterChecker >> 4;
+      }
+      if (nextClusterChecker == 0)
+      {
+        clusterList[i] = nextCluster;
+        i++;
+      }
+      nextCluster++;
+
+=======
+>>>>>>> origin/master
+    }
+
+  //Save the finised cluster list to the parameter passed in
+  *clusters = clusterList;
+  }
+<<<<<<< HEAD
+=======
   else //for deleted files
   {
     //Fill in the rest of the list
@@ -203,6 +260,7 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
   //Save the finised cluster list to the parameter passed in
   *clusters = clusterList;
   }
+>>>>>>> origin/master
 }
 
 void writeFile(long int* clusterList, long int totalClusters, long int filesize, char* filename, char* extension, int deleted, char *path){
