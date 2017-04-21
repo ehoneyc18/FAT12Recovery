@@ -154,9 +154,9 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
   else //for deleted files
   {
     //Fill in the rest of the list
-    int i = 1;
+    int i;
     nextCluster++;
-  while(i < totalCluster){
+    for(i = 1; i < totalCluster; i++){
 
       /* Go through the FAT */
 
@@ -194,11 +194,10 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
       if (nextClusterChecker == 0)
       {
         clusterList[i] = nextCluster;
-        i++;
-
+        nextCluster++;
       }
-      nextCluster++;
-
+      else
+        break;
     }
 
   //Save the finised cluster list to the parameter passed in
