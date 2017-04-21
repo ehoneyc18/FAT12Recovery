@@ -146,7 +146,6 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
         nextCluster = nextCluster >> 4;
       }
       clusterList[i] = nextCluster;
-<<<<<<< HEAD
     }
 
   //Save the finised cluster list to the parameter passed in
@@ -199,15 +198,12 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
       }
       nextCluster++;
 
-=======
->>>>>>> origin/master
     }
 
   //Save the finised cluster list to the parameter passed in
   *clusters = clusterList;
   }
-<<<<<<< HEAD
-=======
+
   else //for deleted files
   {
     //Fill in the rest of the list
@@ -260,7 +256,7 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
   //Save the finised cluster list to the parameter passed in
   *clusters = clusterList;
   }
->>>>>>> origin/master
+
 }
 
 void writeFile(long int* clusterList, long int totalClusters, long int filesize, char* filename, char* extension, int deleted, char *path){
