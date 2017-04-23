@@ -24,37 +24,62 @@
 #define EMPTY_CHAR 32
 #define FILE_EXT_SIZE 3
 #define FILE_SIZE_OFFSET 28
+#define NIB_PER_BYTE 2
+#define BIT_PER_BYTE 4
+#define FILE_SIZE_BYTES 4
+#define FIRST_CLUSTER_BYTES 2
+#define YES 1
+#define NO 0
+#define END_CHAR_SIZE 1
+#define EVEN 0
+#define FAT_ENTRY_MULTIPLIER 3
+#define FAT_ENTRY_DIVISOR 2
+#define EMPTY_IDENTIFIER 0
+#define FAT_ENTRY_BUFFER_SIZE 5
+#define EVEN_SECOND_BYTE_OFFSET 1
+#define ODD_FIRST_BYTE_OFFSET 1
+#define ODD_SECOND_BYTE_OFFSET 2
+#define BUFFER_SIZE 1024
+#define ROOT_DEPTH 500
+#define FIRST_NIBBLE_MASK 0x0F
+#define ODD_FAT_OFFSET 1
+#define ENTRIES_ROOT_OFFSET 33
+#define UNUSED_FAT_ENTRY_OFFSET 2
+#define PATH_DEPTH 1000
+#define DELETED_MARKER 229
+#define NUM_DIR_ENTRIES 16
 
 
 unsigned char *filemappedpage;
 int dirCount = 0;
-int usedRoot[500];
+int usedRoot[ROOT_DEPTH];
 char *dirName;
-char currDir[1024];
-char finalName[1024];
-char fullPath[1024];
+char currDir[BUFFER_SIZE];
+char finalName[BUFFER_SIZE];
+char fullPath[BUFFER_SIZE];
 char *newPath;
 int numFiles = -1;
 
 void retrieveClusters(int currentEntry, long int* clusterNum, long int** clusters, long int* size, char** name, char** ext, int deleted){
 
-      /* ----- Get the file name --- */
-  char* filename = (char*) malloc(sizeof(char) * FILE_NAME_SIZE + 1);
+        /* ----- Get the file name --- */
+  char* filename = (char*) malloc(sizeof(char) * FILE_NAME_SIZE + END_CHAR_SIZE);
   int charnum;
   for(charnum = 0; charnum < FILE_NAME_SIZE; charnum++){
     int currentByte = (int)filemappedpage[currentEntry + charnum];
     if (currentByte == EMPTY_CHAR){
       break;
     }
-    if (charnum == 0 && deleted == 1)
+    if (charnum == 0 && deleted == YES){
       sprintf(filename+charnum, "_");
-    else
+    }else{
       sprintf(filename+charnum, "%c", currentByte);
+    }
   }
   *name = filename;
 
         /*------Get the file extension -----*/
-  char* fileext = (char*) malloc(sizeof(char) * FILE_EXT_SIZE + 1);
+  char* fileext = (char*) malloc(sizeof(char) * FILE_EXT_SIZE + END_CHAR_SIZE);
   for(charnum = 0; charnum < FILE_EXT_SIZE; charnum++){
     int currentByte = (int)filemappedpage[currentEntry + FILE_NAME_SIZE + charnum];
     sprintf(fileext+charnum, "%c", currentByte);
@@ -62,19 +87,18 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
   fileext[charnum] = '\0';
   *ext = fileext;
 
-
       /* ---- Get the int value for the file size----- */
-  char filesize_Hex[9];
+  char filesize_Hex[NIB_PER_BYTE * FILE_SIZE_BYTES + END_CHAR_SIZE];
   int nibbleNum;
   int byteNum = 0;
 
   //Get the bytes in reverse due to little endian ordering and put them in an array
-  for(nibbleNum = 0; nibbleNum < 8; nibbleNum = nibbleNum + 2){
+  for(nibbleNum = 0; nibbleNum < NIB_PER_BYTE * FILE_SIZE_BYTES; nibbleNum = nibbleNum + NIB_PER_BYTE){
     int currentByte = (int)filemappedpage[currentEntry + FILE_ENTRY_OFFSET - byteNum];
     sprintf(filesize_Hex+nibbleNum, "%02x", currentByte);
     byteNum++;
   }
-  filesize_Hex[8] = '\0';
+  filesize_Hex[NIB_PER_BYTE * FILE_SIZE_BYTES] = '\0';
 
   //Convert the array to an int value which will be the size
   long int filesize = strtol(filesize_Hex, NULL, 16);
@@ -82,21 +106,19 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
   //Save the size to the passed in parameter
   *size = filesize;
 
-
        /*----- Get the first cluster of the file ----- */
   //Get the bytes in reverse order from the cluster offset and put them in array
-  //char clusterNum_Hex[5];
+  char clusterNum_Hex[FIRST_CLUSTER_BYTES * NIB_PER_BYTE + END_CHAR_SIZE] ;
   byteNum = 0;
-  for(nibbleNum = 0; nibbleNum < 4; nibbleNum = nibbleNum + 2){
+  for(nibbleNum = 0; nibbleNum < FIRST_CLUSTER_BYTES * NIB_PER_BYTE; nibbleNum = nibbleNum + NIB_PER_BYTE){
     int currentByte = (int)filemappedpage[currentEntry + FIRST_CLUSTER_OFFSET - byteNum];
-    sprintf(filesize_Hex+nibbleNum, "%02x", currentByte);
+    sprintf(clusterNum_Hex+nibbleNum, "%02x", currentByte);
     byteNum++;
-
   }
-  filesize_Hex[4] = '\0';
+  clusterNum_Hex[FIRST_CLUSTER_BYTES * NIB_PER_BYTE] = '\0';
 
   //Convert the array of hex values to an int which will be the first cluster number
-  long int firstCluster = strtol(filesize_Hex, NULL, 16);
+  long int firstCluster = strtol(clusterNum_Hex, NULL, 16);
 
   //Find out how many clusters we need and make array of that size
   long int totalCluster = ceil((double)filesize / (double)CLUSTER_SIZE);
@@ -104,104 +126,104 @@ void retrieveClusters(int currentEntry, long int* clusterNum, long int** cluster
   long int* clusterList = (long int*)malloc(sizeof(long int) * totalCluster);
 
   //Set the first cluster in the list
-  clusterList[0] = firstCluster;
+  int currentCluster = 0;
+  clusterList[currentCluster] = firstCluster;
   long int nextCluster = firstCluster;
 
-  if (deleted == 0)
+  if (deleted == NO)
   {
     //Fill in the rest of the list
-    int i;
-    for(i = 1; i < totalCluster; i++){
+    for(currentCluster = 1; currentCluster < totalCluster; currentCluster++){
 
       /* Go through the FAT */
 
       //Calculate location of the index in the FAT
       bool even = true;
-      if(nextCluster%2 != 0){
-        nextCluster = nextCluster - 1;
+      if(nextCluster%2 != EVEN){
+        nextCluster = nextCluster - ODD_FAT_OFFSET;
         even = false;
       }
-      nextCluster = nextCluster / 2;
-      nextCluster = nextCluster * 3;
+      nextCluster = nextCluster / FAT_ENTRY_DIVISOR;
+      nextCluster = nextCluster * FAT_ENTRY_MULTIPLIER;
 
       //Read the entry at that index of the FAT
-      char nextCluster_Hex[5];
+      char nextCluster_Hex[FAT_ENTRY_BUFFER_SIZE];
       int currentByte;
       if(even){
-        currentByte = (int)filemappedpage[FAT_START + nextCluster + 1];
-        currentByte = currentByte & 0x0F;
+        currentByte = (int)filemappedpage[FAT_START + nextCluster + EVEN_SECOND_BYTE_OFFSET];
+        currentByte = currentByte & FIRST_NIBBLE_MASK;
         sprintf(nextCluster_Hex, "%02x", currentByte);
 
         currentByte = (int)filemappedpage[FAT_START + nextCluster];
-        sprintf(nextCluster_Hex+ 2, "%02x", currentByte);
+        sprintf(nextCluster_Hex+ NIB_PER_BYTE, "%02x", currentByte);
         nextCluster = strtol(nextCluster_Hex, NULL, 16);
       } else{
 
-        currentByte = (int)filemappedpage[FAT_START + nextCluster + 2];
+        currentByte = (int)filemappedpage[FAT_START + nextCluster + ODD_SECOND_BYTE_OFFSET];
         sprintf(nextCluster_Hex, "%02x", currentByte);
 
-        currentByte = (int)filemappedpage[FAT_START + nextCluster + 1];
-        sprintf(nextCluster_Hex+2, "%02x", currentByte);
+        currentByte = (int)filemappedpage[FAT_START + nextCluster + ODD_FIRST_BYTE_OFFSET];
+        sprintf(nextCluster_Hex + NIB_PER_BYTE, "%02x", currentByte);
         nextCluster = strtol(nextCluster_Hex, NULL, 16);
-        nextCluster = nextCluster >> 4;
+        nextCluster = nextCluster >> BIT_PER_BYTE;
       }
-      clusterList[i] = nextCluster;
+      clusterList[currentCluster] = nextCluster;
     }
 
-  //Save the finised cluster list to the parameter passed in
-  *clusters = clusterList;
+    //Save the finised cluster list to the parameter passed in
+    *clusters = clusterList;
   }
   else //for deleted files
   {
     //Fill in the rest of the list
-    int i;
     nextCluster++;
-    for(i = 1; i < totalCluster; i++){
+    for(currentCluster = 1; currentCluster < totalCluster; currentCluster++){
 
       /* Go through the FAT */
 
       //Calculate location of the index in the FAT
       bool even = true;
-      if(nextCluster%2 != 0){
-        nextCluster = nextCluster - 1;
+      if(nextCluster%2 != EVEN){
+        nextCluster = nextCluster - ODD_FAT_OFFSET;
         even = false;
       }
-      nextCluster = nextCluster / 2;
-      nextCluster = nextCluster * 3;
+      nextCluster = nextCluster / FAT_ENTRY_DIVISOR;
+      nextCluster = nextCluster * FAT_ENTRY_MULTIPLIER;
 
       //Read the entry at that index of the FAT
-      char nextCluster_Hex[5];
+      char nextCluster_Hex[FAT_ENTRY_BUFFER_SIZE];
       int currentByte;
       long int nextClusterChecker = 0;
       if(even){
-        currentByte = (int)filemappedpage[FAT_START + nextCluster + 1];
-        currentByte = currentByte & 0x0F;
+        currentByte = (int)filemappedpage[FAT_START + nextCluster + EVEN_SECOND_BYTE_OFFSET];
+        currentByte = currentByte & FIRST_NIBBLE_MASK;
         sprintf(nextCluster_Hex, "%02x", currentByte);
 
         currentByte = (int)filemappedpage[FAT_START + nextCluster];
-        sprintf(nextCluster_Hex+ 2, "%02x", currentByte);
+        sprintf(nextCluster_Hex + NIB_PER_BYTE, "%02x", currentByte);
         nextClusterChecker = strtol(nextCluster_Hex, NULL, 16);
       } else{
 
-        currentByte = (int)filemappedpage[FAT_START + nextCluster + 2];
+        currentByte = (int)filemappedpage[FAT_START + nextCluster + ODD_SECOND_BYTE_OFFSET];
         sprintf(nextCluster_Hex, "%02x", currentByte);
 
-        currentByte = (int)filemappedpage[FAT_START + nextCluster + 1];
-        sprintf(nextCluster_Hex+2, "%02x", currentByte);
+        currentByte = (int)filemappedpage[FAT_START + nextCluster + ODD_FIRST_BYTE_OFFSET];
+        sprintf(nextCluster_Hex + NIB_PER_BYTE, "%02x", currentByte);
         nextClusterChecker = strtol(nextCluster_Hex, NULL, 16);
-        nextClusterChecker = nextClusterChecker >> 4;
+        nextClusterChecker = nextClusterChecker >> BIT_PER_BYTE;
       }
-      if (nextClusterChecker == 0)
+      if (nextClusterChecker == EMPTY_IDENTIFIER)
       {
-        clusterList[i] = nextCluster;
+        clusterList[currentCluster] = nextCluster;
         nextCluster++;
       }
-      else
+      else{
         break;
+      }
     }
 
-  //Save the finised cluster list to the parameter passed in
-  *clusters = clusterList;
+    //Save the finised cluster list to the parameter passed in
+    *clusters = clusterList;
   }
 }
 
@@ -211,20 +233,21 @@ void writeFile(long int* clusterList, long int totalClusters, long int filesize,
    int extensionSize = 4;
 
    //Construct the whole name of the file
-   char *fullname = malloc(strlen(filename) + extensionSize + 1); //+1 for the zero-terminator
+   char *fullname = malloc(strlen(filename) + extensionSize + END_CHAR_SIZE);
    strcpy(fullname, filename);
    strcat(fullname, ".");
    strcat(fullname, extension);
 
-   char nameBuild[1024] = "file";
-   char numBuild[1024]; sprintf(numBuild, "%d", numFiles);
+   char nameBuild[BUFFER_SIZE] = "file";
+   char numBuild[BUFFER_SIZE]; sprintf(numBuild, "%d", numFiles);
    strcat(nameBuild, numBuild);
    strcat(nameBuild, ".");
    strcat(nameBuild, extension);
 
    struct stat chk = {0};
-   if (stat(currDir, &chk) == -1)
+   if (stat(currDir, &chk) == -1){
       mkdir(currDir, 0777);
+   }
 
    chdir(currDir);
 
@@ -237,13 +260,13 @@ void writeFile(long int* clusterList, long int totalClusters, long int filesize,
       exit(1);
    }
 
-   char lastName[1024];
+   char lastName[BUFFER_SIZE];
    strcpy(lastName, path);
    strcat(lastName, fullname);
 
    char *delText = "";
 
-   if (deleted == 1)
+   if (deleted == YES)
      delText = "DELETED";
    else
      delText = "NORMAL";
@@ -253,7 +276,7 @@ void writeFile(long int* clusterList, long int totalClusters, long int filesize,
    // Write the bytes to the file as characters
    int count = 0;
     for(i = 0; i < totalClusters; i++){
-      int clusterRoot = (33 + clusters[i] - 2) * 512;
+      int clusterRoot = (ENTRIES_ROOT_OFFSET + clusters[i] - UNUSED_FAT_ENTRY_OFFSET) * CLUSTER_SIZE;
       int j;
       for(j = 0; (j < CLUSTER_SIZE); j++){
         fwrite(filemappedpage+clusterRoot+j, sizeof(char),1, fptr);
@@ -264,14 +287,14 @@ void writeFile(long int* clusterList, long int totalClusters, long int filesize,
     }
 }
 
-
 void goThroughDir(int root, int rootsize, char *path){
   int currentEntry = root;
   usedRoot[dirCount] = root;
   dirCount++;
 
-  if (root == ROOT_START)
-    newPath = malloc(1000);
+  if (root == ROOT_START){
+    newPath = malloc(PATH_DEPTH);
+  }
 
   //Check the attribute byte to see if it is a file or a directory
   int i;
@@ -287,14 +310,15 @@ void goThroughDir(int root, int rootsize, char *path){
       numFiles++;
 
       //0x00E5 == 229 -> deleted
-      if (filemappedpage[currentEntry] == 229)
-        deleted = 1;
+      if (filemappedpage[currentEntry] == DELETED_MARKER){
+        deleted = YES;
+      }
       retrieveClusters(currentEntry, &totalClusters, &clusterList, &filesize, &filename, &extension, deleted);
       writeFile(clusterList, totalClusters, filesize, filename, extension, deleted, path);
-    } else if (filemappedpage[currentEntry + ATT_OFFSET] == DIR_TYPE){
+      } else if (filemappedpage[currentEntry + ATT_OFFSET] == DIR_TYPE){
 
       int newRoot = filemappedpage[currentEntry + DIR_OFFSET];
-      newRoot = (newRoot + 33 - 2) * 512;
+      newRoot = (newRoot + ENTRIES_ROOT_OFFSET - UNUSED_FAT_ENTRY_OFFSET) * CLUSTER_SIZE;
 
       long int* clusterList;
       long int totalClusters;
@@ -309,23 +333,25 @@ void goThroughDir(int root, int rootsize, char *path){
       int flag = 0;
       for (x = 0; x < dirCount; x++)
       {
-        if (newRoot == usedRoot[x])
+        if (newRoot == usedRoot[x]){
           flag = 1;
+        }
       }
 
       strcpy(fullPath, path);
-      char temp[1024];
+      char temp[BUFFER_SIZE];
       strcpy(temp, fullPath);
 
       if (!flag)
       {
-        if (filemappedpage[currentEntry] == 229)
-          deleted = 1;
+        if (filemappedpage[currentEntry] == DELETED_MARKER){
+          deleted = YES;
+        }
         retrieveClusters(currentEntry, &totalClusters, &clusterList, &filesize, &filename, &extension, deleted);
         strcat(newPath, filename);
         strcat(newPath, "/");
 
-        goThroughDir(newRoot, 16, newPath);
+        goThroughDir(newRoot, NUM_DIR_ENTRIES, newPath);
       }
       strcpy(fullPath, temp);
       newPath = fullPath;
@@ -343,7 +369,7 @@ int main(int argc, char* argv[]){
     dirName = argv[2];
     getcwd(currDir, sizeof(currDir));
 
-    char finalName[1024];
+    char finalName[BUFFER_SIZE];
 
     strcpy(finalName, "/");
     strcat(finalName, dirName);
