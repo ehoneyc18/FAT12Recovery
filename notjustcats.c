@@ -50,6 +50,7 @@
 #define NUM_DIR_ENTRIES 16
 
 
+
 unsigned char *filemappedpage;
 int dirCount = 0;
 int usedRoot[ROOT_DEPTH];
@@ -315,7 +316,7 @@ void goThroughDir(int root, int rootsize, char *path){
       }
       retrieveClusters(currentEntry, &totalClusters, &clusterList, &filesize, &filename, &extension, deleted);
       writeFile(clusterList, totalClusters, filesize, filename, extension, deleted, path);
-      } else if (filemappedpage[currentEntry + ATT_OFFSET] == DIR_TYPE){
+   } else if (filemappedpage[currentEntry + ATT_OFFSET] == DIR_TYPE){
 
       int newRoot = filemappedpage[currentEntry + DIR_OFFSET];
       newRoot = (newRoot + ENTRIES_ROOT_OFFSET - UNUSED_FAT_ENTRY_OFFSET) * CLUSTER_SIZE;
